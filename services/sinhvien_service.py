@@ -2,11 +2,12 @@ import json
 import logging
 import pandas as pd
 from models.sinhvien import SinhVien
-from utils.validation import kiem_tra_email, kiem_tra_sdt, kiem_tra_ngay_sinh
+from utils.validation import kiem_tra_email, kiem_tra_sdt, kiem_tra_ngay_sinh, kiem_tra_trang_thai
 from utils.file_io import load_sinhvien_data, save_sinhvien_data, load_json_file
 from services.khoa_service import KhoaService
 from services.chuongtrinh_service import ChuongTrinhService
 from services.tinhtrang_service import TinhTrangService
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,7 +18,7 @@ logging.basicConfig(
 class SinhVienService:
     def __init__(
         self,
-        sinhvien_data_file="data/sinhvien.json",
+        sinhvien_data_file="data/sinhvien",
         khoa_file="data/khoa.json",
         tinh_trang_file="data/tinhtrang.json",
         chuong_trinh_file="data/chuongtrinh.json",
@@ -95,41 +96,62 @@ class SinhVienService:
         logging.warning(f"Không tìm thấy sinh viên có MSSV {mssv_can_xoa}")
         return f"Không tìm thấy sinh viên có MSSV {mssv_can_xoa}"
 
+    import logging
+
     def cap_nhat_sinh_vien(self, mssv_can_cap_nhat: str, updated_data: dict):
         """
         Cập nhật thông tin sinh viên dựa theo MSSV.
         updated_data chứa các key muốn cập nhật. Nếu key không có trong dict thì giữ nguyên.
         """
+        # Định nghĩa quy tắc chuyển đổi tình trạng sinh viên
+        TAT_CA_TINH_TRANG_HOP_LE = {
+            "Đang học": ["Bảo lưu", "Tốt nghiệp", "Đình chỉ"],
+            "Bảo lưu": ["Đang học", "Đình chỉ"],
+            "Tốt nghiệp": [],  # Không thể thay đổi nữa
+            "Đình chỉ": ["Đang học"]
+        }
+
         for sv in self.danh_sach_sinh_vien:
             if sv.mssv == mssv_can_cap_nhat:
                 sv.ho_ten = updated_data.get("ho_ten", sv.ho_ten)
+                
                 new_ngay_sinh = updated_data.get("ngay_sinh", sv.ngay_sinh)
                 if new_ngay_sinh and not kiem_tra_ngay_sinh(new_ngay_sinh):
                     logging.warning("Ngày sinh không hợp lệ.")
                     return "Ngày sinh không hợp lệ. Vui lòng nhập theo định dạng dd/mm/yyyy."
                 sv.ngay_sinh = new_ngay_sinh
+                
                 sv.gioi_tinh = updated_data.get("gioi_tinh", sv.gioi_tinh)
                 sv.khoa = updated_data.get("khoa", sv.khoa)
                 sv.khoa_hoc = updated_data.get("khoa_hoc", sv.khoa_hoc)
                 sv.chuong_trinh = updated_data.get("chuong_trinh", sv.chuong_trinh)
                 sv.dia_chi = updated_data.get("dia_chi", sv.dia_chi)
+                
                 new_email = updated_data.get("email", sv.email)
                 if new_email and not kiem_tra_email(new_email):
                     logging.warning("Email không hợp lệ.")
                     return "Email không hợp lệ. Vui lòng nhập lại."
                 sv.email = new_email
+                
                 new_sdt = updated_data.get("sdt", sv.sdt)
                 if new_sdt and not kiem_tra_sdt(new_sdt):
                     logging.warning("Số điện thoại không hợp lệ.")
                     return "Số điện thoại không hợp lệ. Vui lòng nhập lại."
                 sv.sdt = new_sdt
-                sv.tinh_trang = updated_data.get("tinh_trang", sv.tinh_trang)
-
+                
+                new_tinh_trang = updated_data.get("tinh_trang", sv.tinh_trang)
+                if new_tinh_trang and not kiem_tra_trang_thai(sv.tinh_trang, new_tinh_trang):
+                    logging.warning(f"Không thể thay đổi tình trạng từ {sv.tinh_trang} sang {new_tinh_trang}.")
+                    return f"Không thể thay đổi tình trạng từ {sv.tinh_trang} sang {new_tinh_trang}."
+                sv.tinh_trang = new_tinh_trang
+                
                 self.save_data()
                 logging.info(f"Đã cập nhật thông tin sinh viên có MSSV {mssv_can_cap_nhat}")
                 return "Cập nhật thông tin thành công!"
+        
         logging.warning(f"Không tìm thấy sinh viên có MSSV {mssv_can_cap_nhat}")
         return f"Không tìm thấy sinh viên có MSSV {mssv_can_cap_nhat}"
+
 
     def tim_kiem_sinh_vien(self, criteria: str, value: str, additional_value: str = None):
         """
